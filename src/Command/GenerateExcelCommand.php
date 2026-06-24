@@ -7,8 +7,8 @@ use App\Component\Report\Definition;
 use App\Component\Report\ReportConfig;
 use App\Component\Report\ReportInterface;
 use App\Service\DataGeneratorService;
+use App\Service\PhpOffice\SpreadsheetFactory;
 use App\Service\SpreadsheetGeneratorService;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -25,7 +25,8 @@ class GenerateExcelCommand extends Command
 {
     public function __construct(
         private DataGeneratorService $dataGenerator,
-        private SpreadsheetGeneratorService $spreadsheetGenerator
+        private SpreadsheetGeneratorService $spreadsheetGenerator,
+        private SpreadsheetFactory $spreadsheetFactory
     ) {
         parent::__construct();
     }
@@ -213,7 +214,7 @@ class GenerateExcelCommand extends Command
         $outputPath = $outputDir.'/large_report.xlsx';
 
         $io->text('Initializing spreadsheet...');
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = $this->spreadsheetFactory->createSpreadsheet();
 
         // 3. Generate data stream generator
         $rowCount = (int)$input->getArgument('rows');
