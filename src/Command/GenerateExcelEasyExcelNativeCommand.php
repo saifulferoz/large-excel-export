@@ -7,9 +7,7 @@ use App\Component\Report\Definition;
 use App\Component\Report\ReportConfig;
 use App\Component\Report\ReportInterface;
 use App\Service\DataGeneratorService;
-use App\Service\SpreadsheetGeneratorService;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use App\Service\EasyExcelNativeGeneratorService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -18,14 +16,14 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
-    name: 'app:generate-excel',
-    description: 'Generates a memory-optimized 400,000-row Excel spreadsheet.',
+    name: 'app:generate-excel-native',
+    description: 'Generates a memory-optimized 400,000-row Excel spreadsheet using easy-excel Native API.',
 )]
-class GenerateExcelCommand extends Command
+class GenerateExcelEasyExcelNativeCommand extends Command
 {
     public function __construct(
         private DataGeneratorService $dataGenerator,
-        private SpreadsheetGeneratorService $spreadsheetGenerator
+        private EasyExcelNativeGeneratorService $nativeGenerator
     ) {
         parent::__construct();
     }
@@ -39,14 +37,13 @@ class GenerateExcelCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
-        $io->title('Starting Memory-Optimized Excel Generation');
+        $io->title('Starting easy-excel Native Excel Generation');
 
-        // Increase memory limit and execution time for safety (4GB for in-memory generation)
+        // Increase memory limit and execution time for safety
         ini_set('memory_limit', '4G');
         set_time_limit(0);
 
         $startTime = microtime(true);
-        $startMemory = memory_get_usage();
 
         // 1. Create Mock Report Implementation matching all requirements
         $report = new class() implements ReportInterface {
@@ -121,7 +118,6 @@ class GenerateExcelCommand extends Command
 
             public function getColumns(): array
             {
-                // Returns all columns as raw object array
                 return [
                     $this->definition->getColumn('id'),
                     $this->definition->getColumn('name'),
@@ -174,13 +170,11 @@ class GenerateExcelCommand extends Command
 
             public function getMergedRow(): array
             {
-                // Demonstration of row merging (handled in SpreadsheetGeneratorService)
                 return [];
             }
 
             public function getSubTotalRow(): array
             {
-                // Periodical sub-totals are handled directly inside generators loop
                 return [];
             }
 
@@ -201,7 +195,7 @@ class GenerateExcelCommand extends Command
 
             public function getAllRows()
             {
-                return []; // Unused since we stream via generator
+                return [];
             }
         };
 
@@ -210,63 +204,38 @@ class GenerateExcelCommand extends Command
         if (!is_dir($outputDir)) {
             mkdir($outputDir, 0777, true);
         }
-        $outputPath = $outputDir.'/large_report.xlsx';
+        $outputPath = $outputDir.'/large_report_native.xlsx';
 
-        $io->text('Initializing spreadsheet...');
-        $spreadsheet = new Spreadsheet();
-
-        // 3. Generate data stream generator
+        $io->text('Initializing easy-excel Native API...');
         $rowCount = (int)$input->getArgument('rows');
         if ($rowCount <= 0) {
             $rowCount = 400000;
         }
-        $io->text(sprintf('Streaming %s data rows into sheet...', number_format($rowCount)));
+
+        $io->text(sprintf('Streaming %s data rows in batches...', number_format($rowCount)));
         $generator = $this->dataGenerator->generate($rowCount);
 
-        $populateStartTime = microtime(true);
-        $populateStartMemory = memory_get_usage();
-
-        // 4. Generate worksheet content
-        $this->spreadsheetGenerator->writeData($report, $spreadsheet, $generator);
-
-        $populateEndTime = microtime(true);
-        $populatePeakMemory = memory_get_peak_usage();
-
-        $saveStartTime = microtime(true);
-        $saveStartMemory = memory_get_usage();
-
-        // 5. Save Spreadsheet
         $io->text('Writing output to Xlsx file: '.$outputPath);
-        $writer = new Xlsx($spreadsheet);
+        
+        $metrics = $this->nativeGenerator->writeData($report, $outputPath, $generator);
 
-        // Key Performance Settings: Disable formula calculation on write to save time and memory
-//        $writer->setPreCalculateFormulas(false);
-        $writer->save($outputPath);
-
-        $saveEndTime = microtime(true);
-        $savePeakMemory = memory_get_peak_usage();
-
-        // 6. Output Statistics
         $endTime = microtime(true);
+        $totalDuration = $endTime - $startTime;
         $peakMemory = memory_get_peak_usage(true);
 
-        $totalDuration = $endTime - $startTime;
-        $populateDuration = $populateEndTime - $populateStartTime;
-        $saveDuration = $saveEndTime - $saveStartTime;
-
         $io->success([
-            'Excel file generated successfully!',
+            'easy-excel Native file generated successfully!',
             sprintf('File Path: %s', $outputPath),
             sprintf('File Size: %s MB', number_format(filesize($outputPath) / 1024 / 1024, 2)),
             '',
             '--- BENCHMARKING DETAILS ---',
-            '1. POPULATE PHASE (Streaming data rows & formatting):',
-            sprintf('   - Time taken: %s seconds', number_format($populateDuration, 2)),
-            sprintf('   - Peak memory at end of phase: %s MB', number_format($populatePeakMemory / 1024 / 1024, 2)),
+            '1. POPULATE PHASE (Batching rows & formatting):',
+            sprintf('   - Time taken: %s seconds', number_format($metrics['populate_time'], 2)),
+            sprintf('   - Peak memory at end of phase: %s MB', number_format($metrics['populate_memory'] / 1024 / 1024, 2)),
             '',
             '2. WRITE/SAVE PHASE (Serializing and saving .xlsx file to disk):',
-            sprintf('   - Time taken: %s seconds', number_format($saveDuration, 2)),
-            sprintf('   - Peak memory at end of phase: %s MB', number_format($savePeakMemory / 1024 / 1024, 2)),
+            sprintf('   - Time taken: %s seconds', number_format($metrics['save_time'], 2)),
+            sprintf('   - Peak memory at end of phase: %s MB', number_format($metrics['save_memory'] / 1024 / 1024, 2)),
             '',
             '3. OVERALL METRICS:',
             sprintf('   - Total Duration: %s seconds', number_format($totalDuration, 2)),

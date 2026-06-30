@@ -68,62 +68,60 @@ The core codebase is organized as follows:
 
 ## 💻 Usage
 
-Run the Symfony console command to generate the Excel report:
+Run the Symfony console commands to generate the Excel report using the different drivers:
 
+### 1. easy-excel (Compatibility Layer)
+Uses the PhpSpreadsheet API facade mapped to the Go C-bindings under the hood:
 ```bash
 php bin/console app:generate-excel [rows]
 ```
 
-### Parameters
-- `rows` *(Optional, Default: `400000`)*: The number of data rows to stream into the spreadsheet.
-
-### Examples
-*Generate a quick test sheet with 100 rows:*
+### 2. easy-excel (Native API)
+Uses the raw flat static bindings of `EasyExcel\Native` to communicate directly with Go:
 ```bash
-php bin/console app:generate-excel 100
+php bin/console app:generate-excel-native [rows]
 ```
 
-*Generate the full-scale 400,000 row production test sheet:*
+### 3. OpenSpout
+Uses the fast, lightweight OpenSpout streaming writer:
 ```bash
-php bin/console app:generate-excel 400000
+php bin/console app:generate-excel-openspout [rows]
 ```
-
-The output file will be saved at:
-📁 `public/reports/large_report.xlsx`
 
 ---
 
 ## 📊 Benchmarking & Performance Metrics
 
-Running a test generation of **100 rows** yields the following performance telemetry:
+Below is a detailed comparison of execution time, PHP peak memory usage, and file sizes across the three implementations, tested on a dataset of **10,000**, **100,000**, and **1,000,000** rows.
 
-```text
-Starting Memory-Optimized Excel Generation
-==========================================
+### Performance Table
 
- Initializing spreadsheet...
- Streaming 100 data rows into sheet...
- Writing output to Xlsx file: public/reports/large_report.xlsx
+| Driver | Row Count | Populate Phase (s) | Save Phase (s) | Total Time (s) | PHP Peak Memory | File Size |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **easy-excel (Compat)** | 10,000 | 3.26 | 0.19 | 3.46 | 10.00 MB | 0.49 MB |
+| **easy-excel (Native)** | 10,000 | 0.27 | 1.40 | 1.70 | 10.00 MB | 0.47 MB |
+| **OpenSpout** | 10,000 | 0.12 | 0.19 | 0.31 | 10.00 MB | 0.45 MB |
+| | | | | | | |
+| **easy-excel (Compat)** | 100,000 | 11.15 | 7.84 | 18.99 | 12.00 MB | 4.71 MB |
+| **easy-excel (Native)** | 100,000 | 1.26 | 7.82 | 9.08 | 10.00 MB | 4.51 MB |
+| **OpenSpout** | 100,000 | 1.29 | 1.71 | 3.00 | 10.00 MB | 4.46 MB |
+| | | | | | | |
+| **easy-excel (Compat)** | 1,000,000 | 54.10 | 30.72 | 84.83 | 12.00 MB | 46.87 MB |
+| **easy-excel (Native)** | 1,000,000 | 9.18 | 102.06 | 111.26 | 10.00 MB | 44.85 MB |
+| **OpenSpout** | 1,000,000 | 12.60 | 21.11 | 33.71 | 10.00 MB | 44.57 MB |
 
- [OK] Excel file generated successfully!                                        
-                                                                                
-      File Path: public/reports/large_report.xlsx                                                                
-      File Size: 5.11 MB                                                        
-                                                                                
-      --- BENCHMARKING DETAILS ---                                              
-                                                                                
-      1. POPULATE PHASE (Streaming data rows & formatting):                     
-         - Time taken: ~37 seconds                                            
-         - Peak memory: ~638 MB                               
-                                                                                
-      2. WRITE/SAVE PHASE (Serializing and saving .xlsx file to disk):          
-         - Time taken: ~21 seconds                                            
-         - Peak memory: ~778 MB                               
-                                                                                
-      3. OVERALL METRICS:                                                       
-         - Total Duration: ~58 seconds                                        
-         - Peak Memory Allocated: ~816 MB                                     
-```
+---
 
-> [!NOTE]
-> Performance will vary based on hardware, CPU capabilities, and local PHP configurations.
+## 🔍 Key Insights & Architectural Trade-offs
+
+### 1. Memory Consumption
+- All three drivers maintain a **constant-memory footprint** (~10.00 MB to 12.00 MB of PHP memory) regardless of whether they write 10,000 or 1,000,000 rows.
+- This is achieved via PHP Generators (`yield`) which stream rows on the fly, preventing data rows from accumulating in PHP memory.
+
+### 2. easy-excel: Compat vs. Native
+- **Populate Speed**: The native `easy-excel` driver populates data **6x faster** (9.18s vs 54.10s for 1M rows) than the compatibility layer because it writes rows in flat 2D arrays directly across the CGO boundary rather than resolving cells one-by-one in PHP objects.
+- **Save Speed**: The compatibility layer saves faster for 1M rows because it streams cell definitions into Go in real-time. To replicate this in the native driver, all styling operations (fonts, alignments, borders) must be declared **before** the rows are written so that the Go-excelize StreamWriter can inline them sequentially rather than buffering sheet cells in memory.
+
+### 3. OpenSpout
+- **Speed**: OpenSpout is the fastest writer (33.71s for 1,000,000 rows) because it writes raw XML directly without the overhead of formula compilation, cell coordinate validations, or complex styling models.
+- **Feature Gap**: OpenSpout does not support formulas, cross-sheet references, conditional formatting, page freeze, or complex corporate page headers. For reports needing professional formatting, `easy-excel` provides a near-identical feature set to PhpSpreadsheet at a fraction of the memory cost.

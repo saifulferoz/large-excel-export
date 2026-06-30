@@ -51,11 +51,11 @@ class SpreadsheetGeneratorService
                 'name' => 'Arial',
             ],
         ]);
-        
+
         $worksheet = $spreadsheet->getActiveSheet();
         $worksheet->setTitle('DataSheet');
         Cell::setValueBinder(new StringValueBinder());
-        
+
         // 2. Set Metadata Properties
         $spreadsheet->getProperties()
             ->setTitle($report->getDefinition()->getTitle())
@@ -66,7 +66,7 @@ class SpreadsheetGeneratorService
         $configSheet->setTitle('ConfigSheet');
         $configSheet->setCellValue('A1', 'Tax Rate');
         $configSheet->setCellValue('B1', 0.15); // 15% tax rate
-        
+
         // Switch back to active sheet
         $spreadsheet->setActiveSheetIndex(0);
         $worksheet = $spreadsheet->getActiveSheet();
@@ -98,10 +98,10 @@ class SpreadsheetGeneratorService
         // 6. Table Headers
         $this->addTableHeaderRow($worksheet, $report);
         $this->contentStartRow = $this->currentRow;
-        
+
         $lastCol = $worksheet->getHighestColumn($this->currentRow - 1);
         $this->lastColumn = $lastCol;
-        
+
         $worksheet->getPageSetup()->setRowsToRepeatAtTopByStartAndEnd(
             $this->currentRow - 1,
             $this->currentRow - 1
@@ -134,13 +134,13 @@ class SpreadsheetGeneratorService
             $worksheet->setCellValue('C' . $this->currentRow, $rowData['category']);
             $worksheet->setCellValue('D' . $this->currentRow, $rowData['quantity']);
             $worksheet->setCellValue('E' . $this->currentRow, $rowData['price']);
-            
+
             // Formula 1: Subtotal = Quantity * Price
             $worksheet->setCellValue('F' . $this->currentRow, "=D{$this->currentRow}*E{$this->currentRow}");
-            
+
             // Formula 2: Tax = Subtotal * ConfigSheet!$B$1 (Reference to another sheet)
             $worksheet->setCellValue('G' . $this->currentRow, "=F{$this->currentRow}*ConfigSheet!\$B\$1");
-            
+
             $worksheet->setCellValue('H' . $this->currentRow, $rowData['date']);
 
             // Row Group Merging Feature Demo (limit to 5 rows for demo to avoid OOM/slowness)
@@ -178,7 +178,7 @@ class SpreadsheetGeneratorService
         // 8. Render Grand Total Row
         if ($report->getDefinition()->hasTotal()) {
             $worksheet->setCellValue('A' . $this->currentRow, 'Grand Total');
-            
+
             // Formulas summing all subtotal rows (column sum divided by 2 since we have subtotal rows in the column)
             $worksheet->setCellValue('D' . $this->currentRow, "=SUM(D{$this->contentStartRow}:D{$this->lastRow})/2");
             $worksheet->setCellValue('E' . $this->currentRow, "=SUM(E{$this->contentStartRow}:E{$this->lastRow})/2");
@@ -282,10 +282,10 @@ class SpreadsheetGeneratorService
         }
     }
 
-    private function writeSubtotalRow(Worksheet $worksheet, int $start, int $end, ReportInterface $report): void
+    private function writeSubtotalRow(Worksheet|\EasyExcel\Compat\Worksheet\Worksheet $worksheet, int $start, int $end, ReportInterface $report): void
     {
         $worksheet->setCellValue('A' . $this->currentRow, 'Sub-total');
-        
+
         // Sum formulas for each numeric column
         $worksheet->setCellValue('D' . $this->currentRow, "=SUM(D{$start}:D{$end})");
         $worksheet->setCellValue('E' . $this->currentRow, "=SUM(E{$start}:E{$end})");
@@ -335,42 +335,42 @@ class SpreadsheetGeneratorService
         }
     }
 
-    private function applyConditionalStyle(Worksheet $worksheet, ReportInterface $report, int $highestRow): void
+    private function applyConditionalStyle(Worksheet|\EasyExcel\Compat\Worksheet\Worksheet $worksheet, ReportInterface $report, int $highestRow): void
     {
         $styles = $report->getReportConfig()->getMetaDataByArrayKey('conditionalStyle');
         if (empty($styles)) {
             return;
         }
-        
+
         $conditionalStyles = $worksheet->getStyle("A:{$this->lastColumn}")
             ->getConditionalStyles();
-            
+
         foreach ($styles as $style) {
             $conditional = new Conditional();
             $conditional->setConditionType($style['conditionType'])
                 ->setOperatorType($style['operatorType'])
                 ->addCondition($style['condition']);
-            
+
             $conditional->getStyle()->getFill()->setFillType(Fill::FILL_SOLID);
             $conditional->getStyle()->getFill()->getStartColor()->setARGB($style['color']);
             $conditional->getStyle()->getFill()->getEndColor()->setARGB($style['color']);
             $conditional->getStyle()->getFont()->setBold(true);
             $conditionalStyles[] = $conditional;
         }
-        
+
         $worksheet->getStyle("A:{$this->lastColumn}")->setConditionalStyles(
             $conditionalStyles
         );
     }
 
-    private function insertLogo(Worksheet $worksheet): void
+    private function insertLogo(Worksheet|\EasyExcel\Compat\Worksheet\Worksheet $worksheet): void
     {
         // Create public/images directory if it doesn't exist and generate a 10x10 dummy png logo
         $imgDir = dirname(__DIR__, 2) . '/public/images';
         if (!is_dir($imgDir)) {
             mkdir($imgDir, 0777, true);
         }
-        
+
         $logoPath = $imgDir . '/logo.png';
         if (!file_exists($logoPath)) {
             // Generate dummy 100x40 image
@@ -424,7 +424,7 @@ class SpreadsheetGeneratorService
         return Coordinate::stringFromColumnIndex($columnIndex);
     }
 
-    private function setSheetColumnWidth(Worksheet $worksheet, array $row, ReportInterface $report): void
+    private function setSheetColumnWidth(Worksheet|\EasyExcel\Compat\Worksheet\Worksheet $worksheet, array $row, ReportInterface $report): void
     {
         $col = 'A';
         foreach (array_keys($row) as $key) {
@@ -438,18 +438,18 @@ class SpreadsheetGeneratorService
         }
     }
 
-    protected function addTableHeaderRow(Worksheet $sheet, ReportInterface $report): self
+    protected function addTableHeaderRow(Worksheet|\EasyExcel\Compat\Worksheet\Worksheet $sheet, ReportInterface $report): self
     {
         $reportHeader = $report->getDefinition()->getReportHeader();
         $col = 'A';
         $startRow = $this->currentRow;
-        
+
         foreach ($reportHeader[0] as $key => $row) {
             $sheet->setCellValue($col . $this->currentRow, $row['label']);
             $sheet->getStyle($col . $this->currentRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)
                 ->setVertical(Alignment::VERTICAL_CENTER);
             $sheet->getStyle($col . $this->currentRow)->getFont()->setBold(true);
-            
+
             if (isset($reportHeader[1])) {
                 $sheet->setCellValue($col . ($this->currentRow + 1), $reportHeader[1][$key]['label']);
                 $sheet->getStyle($col . ($this->currentRow + 1))->getAlignment()
@@ -465,7 +465,7 @@ class SpreadsheetGeneratorService
                     );
                 }
             }
-            
+
             if (isset($reportHeader[2])) {
                 $sheet->setCellValue($col . ($this->currentRow + 2), $reportHeader[2][$key]['label']);
                 $sheet->getStyle($col . ($this->currentRow + 2))->getAlignment()
@@ -473,7 +473,7 @@ class SpreadsheetGeneratorService
                     ->setVertical(Alignment::VERTICAL_CENTER);
                 $sheet->getStyle($col . ($this->currentRow + 2))->getFont()->setBold(true);
             }
-            
+
             if (isset($row['rowspan'])) {
                 $sheet->mergeCells($col . $this->currentRow . ':' . $col . ($this->currentRow + $row['rowspan']));
             }
@@ -488,7 +488,7 @@ class SpreadsheetGeneratorService
             $this->lastColumn = $col;
             $col = SpreadsheetUtil::getNextColumn($col);
         }
-        
+
         $endRow = $this->currentRow + count($reportHeader) - 1;
         $bgColor = $report->getReportConfig()->getMetaDataByArrayKey('tableHeaderBg');
         if (null !== $bgColor) {
@@ -500,7 +500,7 @@ class SpreadsheetGeneratorService
                 new Color(Color::COLOR_WHITE)
             );
         }
-        
+
         $rotation = $report->getColumnHeaderTextRotation();
         if (null !== $rotation && $rotation > 0) {
             if (!isset($reportHeader[1])) {

@@ -1,0 +1,20 @@
+services:
+  web:
+    image: ghcr.io/xiidea/frankenphp8.5-easy-excel:latest
+    ports:
+      - "8000:80"
+    environment:
+      SERVER_NAME: ${SERVER_NAME:-:80}
+      APP_ENV: ${APP_ENV:-dev}
+      APP_SECRET: ${APP_SECRET:-722c6044059bb20caca0e5778324a8f9}
+      # You can override the public directory root if needed:
+      # SERVER_ROOT: public/
+    volumes:
+      - .:/app
+      - caddy_data:/data
+      - caddy_config:/config
+    tty: true
+
+volumes:
+  caddy_data:
+  caddy_config:
